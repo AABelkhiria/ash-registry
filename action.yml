@@ -1,0 +1,97 @@
+name: 'Publish to Ash Registry'
+description: 'Packages a Rust crate, creates a GitHub Release, and publishes metadata to this index.'
+
+inputs:
+  github-token:
+    description: 'The GITHUB_TOKEN for creating a release in the calling repository.'
+    required: true
+  registry-token:
+    description: 'A PAT with permission to write to the ash-registry repository.'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get Crate Information
+      id: crate_info
+      shell: bash
+      run: |
+        CRATE_ID=$(cargo pkgid)
+        CRATE_NAME=$(echo $CRATE_ID | cut -d'#' -f2 | cut -d'@' -f1)
+        CRATE_VERSION=$(echo $CRATE_ID | cut -d'@' -f2)
+        echo "name=${CRATE_NAME}" >> $GITHUB_OUTPUT
+        echo "version=${CRATE_VERSION}" >> $GITHUB_OUTPUT
+        echo "file_name=${CRATE_NAME}-${CRATE_VERSION}.crate" >> $GITHUB_OUTPUT
+
+    - name: Package the Crate
+      shell: bash
+      run: cargo package --allow-dirty
+
+    - name: Create GitHub Release in Calling Repo
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        tag_name: ${{ steps.crate_info.outputs.version }}
+        release_name: Release ${{ steps.crate_info.outputs.version }}
+        draft: false
+        prerelease: false
+
+    - name: Upload .crate file to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./target/package/${{ steps.crate_info.outputs.file_name }}
+        asset_name: ${{ steps.crate_info.outputs.file_name }}
+        asset_content_type: application/x-gtar
+
+    - name: Update Registry Index
+      shell: bash
+      env:
+        CALLER_REPO: ${{ github.repository }}
+        ACTION_REPO: ${{ github.action_repository }}
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        echo "Cloning the registry from ${ACTION_REPO}"
+        git clone https://x-access-token:${REGISTRY_TOKEN}@github.com/${ACTION_REPO}.git registry_clone
+        cd registry_clone
+
+        crate_name="${{ steps.crate_info.outputs.name }}"
+        crate_version="${{ steps.crate_info.outputs.version }}"
+        
+        # Calculate checksum on the file from the original workspace
+        checksum=$(sha256sum ../target/package/${{ steps.crate_info.outputs.file_name }} | awk '{ print $1 }')
+        
+        # The download URL points to the calling repo's release page
+        download_url="https://github.com/${CALLER_REPO}/releases/download/${TAG}/${{ steps.crate_info.outputs.file_name }}"
+
+        # Determine index path based on crate name
+        if [ ${#crate_name} -le 2 ]; then
+          index_dir="${#crate_name}"
+        elif [ ${#crate_name} -eq 3 ]; then
+          index_dir="3/${crate_name:0:1}"
+        else
+          index_dir="${crate_name:0:2}/${crate_name:2:2}"
+        fi
+        
+        mkdir -p "$index_dir"
+        index_file="$index_dir/$crate_name"
+
+        # Create the JSON metadata line
+        jq -c -n \
+          --arg name "$crate_name" \
+          --arg vers "$crate_version" \
+          --arg dl "$download_url" \
+          --arg cksum "$checksum" \
+          --argjson deps '[]' \
+          '{name: $name, vers: $vers, deps: $deps, cksum: $cksum, yanked: false, dl: $dl}' >> "$index_file"
+        
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add .
+        git commit -m "Add ${crate_name} v${crate_version}"
+        git push
