@@ -33,7 +33,7 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
       with:
-        tag_name: ${{ steps.crate_info.outputs.version }}
+        tag_name: v${{ steps.crate_info.outputs.version }}
         release_name: Release ${{ steps.crate_info.outputs.version }}
         draft: false
         prerelease: false
@@ -81,13 +81,16 @@ runs:
         mkdir -p "$index_dir"
         index_file="$index_dir/$crate_name"
 
+        # Create the JSON metadata line for the new version
+        DEPS_JSON=$(cargo metadata --no-deps --format-version 1 | jq -cr '.packages[0].dependencies | map({name: .name, req: .req, features: .features, optional: .optional, default_features: .uses_default_features, target: .target, kind: .kind, registry: .registry})')
+
         # Create the JSON metadata line
         jq -c -n \
           --arg name "$crate_name" \
           --arg vers "$crate_version" \
           --arg dl "$download_url" \
           --arg cksum "$checksum" \
-          --argjson deps '[]' \
+          --argjson deps "${DEPS_JSON:-[]}" \
           '{name: $name, vers: $vers, deps: $deps, cksum: $cksum, yanked: false, dl: $dl}' >> "$index_file"
         
         git config --global user.name "GitHub Actions"
