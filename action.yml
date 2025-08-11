@@ -54,7 +54,7 @@ runs:
         CALLER_REPO: ${{ github.repository }}
         ACTION_REPO: ${{ github.action_repository }}
         REGISTRY_TOKEN: ${{ inputs.registry-token }}
-        TAG: ${{ github.ref_name }}
+        TAG: v${{ steps.crate_info.outputs.version }}
       run: |
         echo "Cloning the registry from ${ACTION_REPO}"
         git clone https://x-access-token:${REGISTRY_TOKEN}@github.com/${ACTION_REPO}.git registry_clone

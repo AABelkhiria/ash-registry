@@ -1,3 +1,4 @@
 {
-    "api": "https://github.com/<your-username>/ash-registry"
+    "api": "https://github.com/<your-username>/ash-registry",
+    "dl": ""
 }
