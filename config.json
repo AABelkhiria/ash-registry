@@ -1,4 +1,4 @@
 {
-    "api": "https://github.com/<your-username>/ash-registry",
-    "dl": ""
+    "api": "https://github.com/AABelkhiria/ash-registry",
+    "dl": "https://github.com/AABelkhiria/{crate}-lib-rs/releases/download/v{version}/{crate}-{version}.crate"
 }
